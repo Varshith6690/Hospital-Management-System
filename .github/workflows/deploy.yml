@@ -1,0 +1,143 @@
+name: Deploy HMS to EC2
+
+on:
+  push:
+    branches:
+      - feature/team-merge
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Backend Dependencies
+        run: |
+          cd HMS_Back_end
+          npm install --ignore-scripts
+
+      - name: Install Angular Dependencies
+        run: |
+          cd HMS_Front_end
+          npm install
+
+      - name: Build Angular
+        run: |
+          cd HMS_Front_end
+          npx ng build --configuration production
+
+      - name: Setup EC2 Swap Memory
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            if [ ! -f /swapfile ]; then
+              sudo fallocate -l 2G /swapfile
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+              echo "Swap created"
+            else
+              echo "Swap already exists"
+            fi
+
+      - name: Deploy Backend
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Clone personal repo if not exists
+            if [ ! -d ~/hms-personal ]; then
+              git clone https://github.com/Varshith-UST/hms-sprint5-deploy.git ~/hms-personal
+            fi
+
+            cd ~/hms-personal
+            git pull origin main
+
+            cd HMS_Back_end
+            npm install --ignore-scripts
+
+            # Create .env from GitHub Secrets
+            cat > .env << 'ENVEOF'
+            PORT=5000
+            NODE_ENV=production
+            MONGO_URI=${{ secrets.MONGO_URI }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_PATIENT_SECRET=${{ secrets.JWT_PATIENT_SECRET }}
+            REFRESH_TOKEN_SECRET=${{ secrets.REFRESH_TOKEN_SECRET }}
+            JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN }}
+            REFRESH_TOKEN_EXPIRES_IN=${{ secrets.REFRESH_TOKEN_EXPIRES_IN }}
+            REFRESH_TOKEN_EXPIRES_DAYS=${{ secrets.REFRESH_TOKEN_EXPIRES_DAYS }}
+            OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
+            OWNER_PASS=${{ secrets.OWNER_PASS }}
+            NODE_TLS_REJECT_UNAUTHORIZED=${{ secrets.NODE_TLS_REJECT_UNAUTHORIZED }}
+            FRONTEND_URL=http://${{ secrets.EC2_HOST }}
+            BREVO_API_KEY=${{ secrets.BREVO_API_KEY }}
+            EMAIL_USER=${{ secrets.EMAIL_USER }}
+            ENVEOF
+
+            # Restart or start PM2 from new folder
+            pm2 stop hms-backend || true
+            pm2 delete hms-backend || true
+            pm2 start src/server.js --name hms-backend
+            pm2 save
+
+            echo "Backend deployed from personal repo"
+
+      - name: Copy Angular Build to EC2
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "HMS_Front_end/dist/Admin-Panel/browser/*"
+          target: "/tmp/angular-build"
+          strip_components: 4
+
+      - name: Deploy Angular and Restart Nginx
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo rm -rf /var/www/html/*
+            sudo cp -r /tmp/angular-build/* /var/www/html/
+            sudo chown -R www-data:www-data /var/www/html/
+            sudo chmod -R 755 /var/www/html/
+            rm -rf /tmp/angular-build
+            sudo systemctl restart nginx
+            echo "Angular deployed"
+
+      - name: Health Check
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            echo "=== PM2 Status ==="
+            pm2 list
+
+            echo "=== API Health ==="
+            curl -s http://localhost:5000/ || echo "Backend not responding"
+
+            echo "=== Nginx Status ==="
+            sudo systemctl status nginx --no-pager | head -5
+
+            echo "=== Angular Files ==="
+            ls /var/www/html/index.html && echo "index.html exists"
+
+            echo "=== DEPLOYMENT COMPLETE ==="
