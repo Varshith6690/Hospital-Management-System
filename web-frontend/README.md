@@ -1,152 +1,454 @@
-# HMS Front End
+# HMS Web Dashboard (Angular)
 
-Angular 21 admin panel / dashboard for the **Hospital Management System (HMS)**.
-It consumes the [HMS Back End](../HMS_Back_end) REST API and provides role-aware
-screens for managing employees, admins, patients, appointments and approvals.
+Angular-based admin dashboard for hospital staff with role-based access control.
 
-Built with modern Angular: **standalone components**, **zoneless change
-detection**, **signals**, and **lazy-loaded routes**.
+## Overview
 
-## Tech stack
-
-| Area              | Library                          |
-| ----------------- | -------------------------------- |
-| Framework         | Angular `^21.2`                  |
-| Language          | TypeScript `~5.9`                |
-| Reactive          | RxJS `~7.8` + Angular signals    |
-| Testing           | Vitest, jsdom                    |
-| Formatting        | Prettier                         |
-| Tooling           | Angular CLI / `@angular/build`   |
-
-## Prerequisites
-
-- Node.js and npm
-- Angular CLI (use `npx ng ...`, or install globally)
-- The HMS Back End running and reachable (default `http://localhost:5000/api`)
-
-## Getting started
-
-```bash
-# Install dependencies
-npm install
-
-# Start the dev server
-npm start            # = ng serve
-```
-
-Open `http://localhost:4200`. The app reloads on source changes.
-
-> **CORS:** the backend only accepts requests from its configured
-> `FRONTEND_URL`. Keep it set to `http://localhost:4200` during local
-> development.
-
-## Environment configuration
-
-API endpoints are defined per build configuration in `src/environments/`:
-
-| File                          | `production` | `apiUrl`                                  |
-| ----------------------------- | ------------ | ----------------------------------------- |
-| `environment.development.ts`  | `false`      | `http://localhost:5000/api`               |
-| `environment.ts`              | `true`       | `https://vanguard-hms-rho.vercel.app/api` |
-
-`angular.json` performs a file replacement so production builds use
-`environment.ts` while `ng serve` / development builds use
-`environment.development.ts`. Import the API URL via
-`import { environment } from '.../environments/environment'`.
-
-## Available scripts
-
-| Script          | Action                                   |
-| --------------- | ---------------------------------------- |
-| `npm start`     | `ng serve` (dev server on :4200)         |
-| `npm run build` | Production build to `dist/`              |
-| `npm run watch` | Rebuild on change (development config)    |
-| `npm test`      | Run unit tests with Vitest               |
-| `npm run ng`    | Raw Angular CLI passthrough              |
-
-## Architecture
-
-```
-src/
-├── app/
-│   ├── app.config.ts          # Providers: router, http client + auth interceptor, zoneless CD
-│   ├── app.routes.ts          # Route tree + route guards
-│   ├── core/
-│   │   ├── guards/            # auth, role/designation, must-change-password, unsaved-changes
-│   │   ├── interceptors/      # authInterceptor (bearer token + global error handling)
-│   │   ├── models/            # Typed API/domain models
-│   │   ├── services/          # AuthService, and one service per resource
-│   │   └── validators/        # Reusable reactive-form validators
-│   ├── features/
-│   │   ├── auth/              # login, register, forgot/reset/change-password
-│   │   ├── dashboard/         # overview, employees, admins, approvals, patients, appointments, profile
-│   │   └── home/              # public landing page
-│   └── shared/ui/             # Reusable UI: navbar, sidebar, modals, toast, slot pickers, inputs, etc.
-├── environments/              # Per-config API URLs
-├── index.html
-├── main.ts                    # Bootstraps AppComponent with appConfig
-└── styles.css
-```
-
-## Routing & access control
-
-Routes are declared in `src/app/app.routes.ts` and lazy-load each component.
-
-**Public:** `/` (home), `/login`, `/register`, `/forgot-password`,
-`/reset-password`.
-
-**Gated:** `/change-password` (authenticated; also the forced first-login flow).
-
-**Dashboard tree** (`/dashboard/*`) — protected by `authGuard` +
-`mustChangePasswordGuard`:
-
-| Route                          | Allowed (besides OWNER/ADMIN superusers) |
-| ------------------------------ | ---------------------------------------- |
-| `overview`, `profile`          | any authenticated user                   |
-| `employees`, `employees/*`     | OWNER, ADMIN only                        |
-| `approvals`                    | OWNER, ADMIN only                        |
-| `admins`, `admins/create`      | **OWNER only** (`ownerOnlyGuard`)        |
-| `patients`, `patients/*`       | RECEPTIONIST                             |
-| `appointments` (list/detail)   | RECEPTIONIST, DOCTOR                     |
-| `appointments/book`, `.../edit`| RECEPTIONIST                             |
-
-Guards (`src/app/core/guards/`):
-
-- `authGuard` — requires a valid session, else redirects to `/login`.
-- `designationGuard([...])` — designation-based access; **OWNER and ADMIN always pass** (superusers).
-- `ownerOnlyGuard` — OWNER-only (defined alongside the routes).
-- `mustChangePasswordGuard` — forces first-login users to set a new password.
-- `unsavedChangesGuard` — `canDeactivate` guard warning on unsaved form changes.
-
-## Authentication & HTTP
-
-- On login, the JWT and user object are stored in `localStorage` under
-  `hms_token` and `hms_user`.
-- `authInterceptor` (`src/app/core/interceptors/auth.interceptor.ts`) attaches
-  `Authorization: Bearer <token>` to every request and handles errors globally:
-  - **401** → toast + clear session (except on public auth calls)
-  - **403** → toast + redirect to `/dashboard/overview`
-  - **0** → "cannot reach server" toast
-- `AuthService` (`src/app/core/services/auth.service.ts`) owns all auth flows
-  (login, self-register, forgot/reset/change password, `me` refresh, logout) and
-  exposes both an observable (`currentUser$`) and a signal (`currentUserSignal`),
-  plus accessors like `isAuthenticated()`, `getDesignation()`, `isSuperUser()`
-  and `hasDesignation([...])`.
+Enterprise-grade Angular web application for hospital staff (Owner, Admin, Doctor, Receptionist) with comprehensive patient management, appointment scheduling, and medical records system.
 
 ## Features
 
-- **Overview** — role-specific dashboard landing.
-- **Employees** — list, create and edit staff (OWNER/ADMIN).
-- **Admins** — manage admin accounts (OWNER only).
-- **Approvals** — review pending self-registrations and profile-change requests.
-- **Patients** — register, search, view and edit patients (reception).
-- **Appointments** — book, list, view detail, edit, cancel, complete.
-- **Profile** — view and request changes to your own profile.
+### Authentication & Authorization
 
-## Build & deploy
+- JWT-based authentication with refresh token rotation
+- Role-based UI — Different dashboards per role
+- Route guards — Prevent unauthorized access
+- HTTP interceptors — Auto-attach JWT, handle 401/403
+
+### Employee Management (Admin/Owner)
+
+- Create, approve, reject, update, delete employees
+- Approval workflow for new registrations
+- Profile change request system
+- Audit log viewer
+
+### Patient Management
+
+- Register new patients with UHID generation
+- Search patients by name, UHID, phone
+- Update patient information
+- View patient history
+
+### Appointment Scheduling
+
+- Book appointments with double-booking prevention
+- View available doctor slots
+- Cancel/reschedule appointments
+- Mark appointments as completed/unattended
+- Email notifications
+
+### Medical Records
+
+- Create draft medical records
+- Verify and finalize records (Doctor/Admin)
+- Link records to appointments
+- Draft → Verified → Finalized workflow
+
+### Dashboard Analytics
+
+- Role-specific statistics
+- Appointment trends
+- Patient demographics
+- Employee performance metrics
+
+### System Administration (Owner)
+
+- Manage permissions per role
+- Configure sidebar navigation nodes
+- System-wide settings
+
+## Architecture
+
+```text
+Angular Application
+    │
+    ├── Core (Services, Guards, Interceptors)
+    ├── Features (Lazy-loaded modules)
+    │   ├── Auth
+    │   ├── Dashboard
+    │   ├── Patients
+    │   ├── Appointments
+    │   ├── Employees
+    │   ├── Medical Records
+    │   └── Settings
+    └── Shared (Reusable components, pipes)
+```
+
+## Folder Structure
+
+```text
+web-frontend/
+├── src/
+│   ├── app/
+│   │   ├── core/
+│   │   │   ├── guards/         # Route guards
+│   │   │   ├── interceptors/   # HTTP interceptors
+│   │   │   ├── models/         # TypeScript interfaces
+│   │   │   ├── services/       # API services
+│   │   │   └── validators/     # Form validators
+│   │   ├── features/
+│   │   │   ├── auth/           # Login, register, forgot password
+│   │   │   ├── dashboard/      # Role-specific dashboards
+│   │   │   └── home/           # Main layout
+│   │   └── shared/
+│   │       ├── pipes/          # Custom pipes
+│   │       └── ui/             # Reusable components
+│   ├── assets/                 # Images, fonts, icons
+│   ├── environments/           # Environment configs
+│   └── styles/                 # Global styles
+├── angular.json
+├── package.json
+└── README.md
+```
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 14+
+- Angular CLI 14+
+- npm or yarn
+
+### Installation
+
+```bash
+# Install Angular CLI globally
+npm install -g @angular/cli
+
+# Install dependencies
+npm install
+```
+
+### Environment Configuration
+
+Update `src/environments/environment.ts`:
+
+```typescript
+export const environment = {
+  production: false,
+  apiUrl: 'http://localhost:5000/api'
+};
+```
+
+Update `src/environments/environment.prod.ts` for production:
+
+```typescript
+export const environment = {
+  production: true,
+  apiUrl: 'https://your-api-domain.com/api'
+};
+```
+
+### Run Development Server
+
+```bash
+npm start
+
+# or
+
+ng serve
+```
+
+Navigate to:
+
+```text
+http://localhost:4200/
+```
+
+### Build for Production
+
+```bash
+npm run build
+
+# or
+
+ng build --configuration production
+```
+
+Output will be generated in the `dist/` folder.
+
+## Default Login Credentials
+
+| Role | Email | Password |
+|--------|--------|--------|
+| Owner | owner@hospital.com | Owner@123 |
+| Admin | admin@hospital.com | Admin@123 |
+| Doctor | doctor@hospital.com | Doctor@123 |
+| Receptionist | receptionist@hospital.com | Receptionist@123 |
+
+## UI Features
+
+### Layout
+
+- Responsive design — Mobile, tablet, desktop
+- Sidebar navigation — Role-based menu visibility
+- Top navbar — User profile, notifications, logout
+- Breadcrumbs — Navigation tracking
+
+### Components
+
+- Data tables — Sortable, filterable, paginated
+- Forms — Reactive forms with validation
+- Modals — Create/edit dialogs
+- Toast notifications — Success/error messages
+- Loading states — Spinners, skeletons
+- Confirmation dialogs — Delete confirmations
+
+### Styling
+
+- Angular Material — Material Design components
+- Custom theme — Hospital-friendly color palette
+- Responsive grid — Bootstrap-like layout
+- Material Icons
+
+## Security Features
+
+### Route Guards
+
+```typescript
+// auth.guard.ts - Protects authenticated routes
+// role.guard.ts - Restricts by role
+// permission.guard.ts - Checks specific permissions
+```
+
+### HTTP Interceptors
+
+```typescript
+// auth.interceptor.ts - Attach JWT to requests
+// error.interceptor.ts - Handle 401/403/500 globally
+```
+
+### Token Management
+
+- Access token stored in localStorage
+- Refresh token stored in httpOnly cookie (backend)
+- Auto-refresh on 401 errors
+- Auto-logout on token expiry
+
+## State Management
+
+- Services — Singleton services for shared state
+- BehaviorSubjects — Reactive state updates
+- LocalStorage — Persist user session
+
+## Testing
+
+```bash
+# Run unit tests
+npm test
+
+# or
+
+ng test
+
+# Run e2e tests
+npm run e2e
+
+# or
+
+ng e2e
+
+# Code coverage
+ng test --code-coverage
+```
+
+## Deployment
+
+### Deploy to Vercel
+
+```bash
+npm i -g vercel
+
+npm run build
+
+vercel --prod
+```
+
+### Deploy to Netlify
 
 ```bash
 npm run build
 ```
 
-Outputs to `dist/`. The production build uses `environment.ts` (Vercel API URL).
+Upload the generated `dist/` folder or connect the GitHub repository.
+
+### Deploy to Firebase Hosting
+
+```bash
+npm i -g firebase-tools
+
+firebase login
+
+firebase init hosting
+
+firebase deploy
+```
+
+## Performance Optimizations
+
+- Lazy loading — Feature modules loaded on demand
+- OnPush change detection — Reduce unnecessary checks
+- TrackBy functions — Optimize *ngFor rendering
+- Production build — AOT compilation and tree-shaking
+- Bundle size — ~500KB gzipped
+
+## Tech Stack
+
+- Framework: Angular 14+
+- Language: TypeScript
+- UI Library: Angular Material
+- HTTP Client: Angular HttpClient
+- Forms: Reactive Forms
+- Routing: Angular Router
+- Icons: Material Icons
+- Build Tool: Angular CLI + Webpack
+
+## Scripts
+
+```bash
+npm start              # Start dev server
+npm run build          # Production build
+npm test               # Run tests
+npm run lint           # Lint code
+npm run format         # Format code
+ng generate component  # Generate component
+ng generate service    # Generate service
+```
+
+## Configuration
+
+### angular.json
+
+Key configurations:
+
+- Output path: `dist/web-frontend`
+- Styles: `src/styles.scss`
+- Assets: `src/assets`
+- Production optimization: enabled
+
+### tsconfig.json
+
+Path aliases configured:
+
+```json
+{
+  "paths": {
+    "@core/*": ["src/app/core/*"],
+    "@shared/*": ["src/app/shared/*"],
+    "@features/*": ["src/app/features/*"]
+  }
+}
+```
+
+## Troubleshooting
+
+### Port Already in Use
+
+```bash
+ng serve --port 4201
+```
+
+### CORS Errors
+
+```text
+Backend must allow http://localhost:4200 in CORS.
+Check backend CORS configuration.
+```
+
+### API Connection Failed
+
+```text
+Verify backend is running on localhost:5000.
+Check environment.ts apiUrl is correct.
+```
+
+### Build Errors
+
+```bash
+rm -rf node_modules package-lock.json
+
+npm install
+
+rm -rf .angular
+```
+
+## Responsive Breakpoints
+
+```scss
+// Mobile
+@media (max-width: 767px) { }
+
+// Tablet
+@media (min-width: 768px) and (max-width: 1023px) { }
+
+// Desktop
+@media (min-width: 1024px) { }
+```
+
+## Future Enhancements
+
+- Progressive Web App (PWA)
+- Offline mode with service workers
+- Real-time notifications (WebSocket)
+- Advanced analytics dashboards
+- Multi-language support (i18n)
+- Dark mode theme
+
+## Development Guidelines
+
+### Component Structure
+
+```typescript
+@Component({
+  selector: 'app-component-name',
+  templateUrl: './component-name.component.html',
+  styleUrls: ['./component-name.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush
+})
+export class ComponentNameComponent implements OnInit {
+  // Use OnPush for performance
+}
+```
+
+### Service Pattern
+
+```typescript
+@Injectable({ providedIn: 'root' })
+export class DataService {
+  private apiUrl = environment.apiUrl;
+
+  constructor(private http: HttpClient) {}
+
+  getData(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/endpoint`);
+  }
+}
+```
+
+## Documentation
+
+- ../README.md
+- Architecture Overview
+- ../API_DOCUMENTATION.md
+- ../backend/DATABASE_SCHEMA.md
+- ../backend/README.md
+
+## License
+
+MIT
+
+## Author
+
+**Varshith Jakkula**
+
+GitHub:  
+https://github.com/Varshith6690
+
+Portfolio:  
+https://varshith-portfolio-self.vercel.app/
+
+LinkedIn:  
+https://www.linkedin.com/in/varshith-jakkula-34145a273/
+
+Email:  
+21r21a6690@gmail.com
