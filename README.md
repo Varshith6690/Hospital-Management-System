@@ -260,7 +260,7 @@ Email:
 
 ## Acknowledgments
 
-- Built during Full-Stack Development training at UST Global (Mar 2025 – Jun 2025)
+- Built during Full-Stack Development training at UST Global (Mar 2026 – Jun 2026)
 - Special thanks to UST mentors and training team
 
 ## Project Status
@@ -269,8 +269,8 @@ Completed — Fully functional cross-platform HMS with web and mobile clients.
 
 ## Project Timeline
 
-- Start Date: March 2025
-- End Date: June 2025
+- Start Date: March 2026
+- End Date: June 2026
 - Duration: 4 Months
 - Type: Full-Stack Training Project
 
